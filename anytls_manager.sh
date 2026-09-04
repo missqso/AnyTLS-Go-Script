@@ -1,11 +1,13 @@
 #!/bin/bash
 
 # AnyTLS-Go 服务端一键管理脚本
-# 版本: v0.0.8 (基于 anytls/anytls-go)
+# 版本: rolling-latest (基于 anytls/anytls-go)
 
 # --- 全局配置参数 ---
-ANYTLS_VERSION="v0.0.8"
+ANYTLS_VERSION=""
 BASE_URL="https://github.com/anytls/anytls-go/releases/download"
+LATEST_RELEASE_API="https://api.github.com/repos/anytls/anytls-go/releases/latest"
+LATEST_RELEASE_URL="https://github.com/anytls/anytls-go/releases/latest"
 INSTALL_DIR_TEMP="/tmp/anytls_install_$$" # 使用 $$ 增加随机性
 BIN_DIR="/usr/local/bin"
 SERVER_BINARY_NAME="anytls-server"
@@ -18,6 +20,39 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_FILE_BASENAME}"
 # 检查命令是否存在
 check_command() {
   command -v "$1" >/dev/null 2>&1
+}
+
+# 每次安装/更新时从 GitHub Releases 查询最新稳定版。
+# 不使用 latest/download，是因为 AnyTLS 的压缩包文件名包含版本号。
+get_latest_anytls_version() {
+  local release_json latest_url latest_version
+
+  echo "正在查询 AnyTLS-Go 最新稳定版本..." >&2
+  # GitHub 的 /releases/latest 会跳转到最新稳定版标签；此方式不消耗 API 配额。
+  latest_url=$(curl -fsSLI --retry 3 --connect-timeout 10 --max-time 30 \
+    -o /dev/null -w '%{url_effective}' "$LATEST_RELEASE_URL" 2>/dev/null || true)
+  latest_version=${latest_url##*/}
+
+  # 某些代理不正确处理 HEAD/重定向时，再使用 GitHub API 兜底。
+  if ! [[ "$latest_version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+    release_json=$(curl -fsSL --retry 3 --connect-timeout 10 --max-time 30 \
+      -H "Accept: application/vnd.github+json" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      -H "User-Agent: anytls-manager-latest" \
+      "$LATEST_RELEASE_API" 2>/dev/null || true)
+    latest_version=$(printf '%s\n' "$release_json" \
+      | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' \
+      | head -n 1)
+  fi
+
+  if ! [[ "$latest_version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+    echo "错误：无法从 GitHub Releases 获取有效版本号，请检查 VPS 网络后重试。" >&2
+    return 1
+  fi
+
+  # 官方当前使用 v 前缀；若以后 API 返回无 v 的版本号，也能兼容。
+  [[ "$latest_version" == v* ]] || latest_version="v${latest_version}"
+  printf '%s\n' "$latest_version"
 }
 
 # 安装必要的软件包
@@ -131,8 +166,8 @@ require_root() {
 # --- 服务管理与安装卸载函数 ---
 
 do_install() {
-    require_root "install"
-    echo "开始安装/更新 AnyTLS-Go 服务 (目标版本: ${ANYTLS_VERSION})..."
+  require_root "install"
+  echo "开始安装/更新 AnyTLS-Go 服务..."
     echo "=================================================="
 
     read -r -p "请输入 AnyTLS 服务端监听端口 (默认 8443): " ANYTLS_PORT
@@ -155,9 +190,12 @@ do_install() {
     local deps_to_install=()
     if ! check_command wget; then deps_to_install+=("wget"); fi
     if ! check_command unzip; then deps_to_install+=("unzip"); fi
-    if ! check_command curl; then deps_to_install+=("curl"); fi
+  if ! check_command curl; then deps_to_install+=("curl"); fi
     if ! check_command qrencode; then deps_to_install+=("qrencode"); fi
-    if ! install_packages "${deps_to_install[@]}"; then echo "依赖安装失败，无法继续。"; exit 1; fi
+  if ! install_packages "${deps_to_install[@]}"; then echo "依赖安装失败，无法继续。"; exit 1; fi
+
+  ANYTLS_VERSION=$(get_latest_anytls_version) || exit 1
+  echo "检测到最新稳定版本：${ANYTLS_VERSION}"
 
     local ARCH_RAW ANYTLS_ARCH
     ARCH_RAW=$(uname -m)
