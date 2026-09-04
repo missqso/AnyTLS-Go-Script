@@ -1,8 +1,3 @@
-[![DigitalOcean Referral Badge](https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%203.svg)](https://www.digitalocean.com/?refcode=9b9563b5b0b2&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge)
-
-🚀 速来拼好模，智谱 GLM Coding 超值订阅，邀你一起薅羊毛！Claude Code、Cline 等 20+ 大编程工具无缝支持，“码力”全开，越拼越爽！立即开拼，享限时惊喜价！
-      链接：https://www.bigmodel.cn/glm-coding?ic=QJ82Z7R8YK
-
 # AnyTLS-Go 一键安装管理脚本
 
 ## 主要功能
